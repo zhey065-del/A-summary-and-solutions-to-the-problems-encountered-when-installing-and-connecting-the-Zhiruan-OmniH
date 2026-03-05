@@ -4,13 +4,110 @@
 本实验使用的是基于Linux的ros2系统，需要下载的为  SDK、URDF与说明文档中的URDF（上传日期：2026.2.1）：OmniHand Pro 2025 URDF。文档的开源链接：https://www.zhiyuan-robot.com/DOCS/OS/Omnihand-O12
 
 
-着重分享：根据压缩文件包内的所有步骤在最后显示右手模型的部分指令为：
+①：着重分享：根据压缩文件包内的所有步骤在最后显示右手模型的部分指令为：
 
 ros2 launch omnihand_pro_description omnihand_pro_description_launch.py
 但是系统生成的py文件应当是
 
 ros2 launch omnihand_pro_description omnihand_pro_description.launch.py
 文件名的不同可能导致无法运行等问题！！！
+
+
+②：分享如何实现灵巧手在rviz中围绕坐标轴原点360°旋转。
+第一步：在工作空间创建新功能包
+1.我们需要一个专门存放你脚本的地方。打开终端，进入你的 src 目录：
+
+cd ~/omnihand_pro_ws/src
+
+2.创建一个 Python 类型的 ROS 2 功能包：
+
+ros2 pkg create --build-type ament_python hand_controller --dependencies rclpy tf2_ros geometry_msgs
+
+第二步：编写控制脚本
+我们将创建一个名为 hand_mover.py 的文件，让手在空中做圆周运动。
+cd hand_controller/hand_controller
+使用你喜欢的编辑器（如 gedit 或 code）创建并打开文件：
+gedit hand_mover.py
+复制此代码进入py文件
+
+import rclpy
+from rclpy.node import Node
+from tf2_ros import TransformBroadcaster
+from geometry_msgs.msg import TransformStamped
+import math
+
+class HandMover(Node):
+    def __init__(self):
+        super().__init__('hand_mover_node')
+        self.br = TransformBroadcaster(self)
+        # 设置定时器，每 0.05 秒更新一次位置 (20Hz)
+        self.timer = self.create_timer(0.05, self.broadcast_timer_callback)
+        self.angle = 0.0
+
+    def broadcast_timer_callback(self):
+        t = TransformStamped()
+        
+        # 1. 设置时间戳和坐标系名称
+        t.header.stamp = self.get_clock().now().to_msg()
+        t.header.frame_id = 'world'      # 父坐标系：世界
+        t.child_frame_id = 'base_link'   # 子坐标系：灵巧手的根部
+
+        # 2. 计算圆周运动轨迹
+        radius = 0.5  # 半径 0.5 米
+        self.angle += 0.05
+        t.transform.translation.x = radius * math.cos(self.angle)
+        t.transform.translation.y = radius * math.sin(self.angle)
+        t.transform.translation.z = 0.2 # 离地 0.2 米
+
+        # 3. 设置姿态（这里保持不旋转，设为单位四元数）
+        t.transform.rotation.x = 0.0
+        t.transform.rotation.y = 0.0
+        t.transform.rotation.z = 0.0
+        t.transform.rotation.w = 1.0
+
+        # 4. 发送坐标变换
+        self.br.sendTransform(t)
+
+def main():
+    rclpy.init()
+    node = HandMover()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+
+
+第三步：配置安装信息
+打开 setup.py：
+cd ~/omnihand_pro_ws/src/hand_controller
+gedit setup.py
+
+在 entry_points 的 'console_scripts': [ 这一行后面，添加如下内容：
+'hand_mover = hand_controller.hand_mover:main',//(新文件中已添加)
+
+第四步：编译并运行
+回到工作空间根目录进行编译：
+cd ~/omnihand_pro_ws
+colcon build --packages-select hand_controller
+source install/setup.bash
+**启动你的灵巧手 RViz**
+ros2 launch omnihand_pro_description omnihand_pro_description.launch.py
+
+在另一个新终端启动脚本：
+source ~/omnihand_pro_ws/install/setup.bash
+ros2 run hand_controller hand_mover
+
+第五步：在 RViz 中见证奇迹
+回到 RViz 窗口。
+将左侧 Global Options 里的 Fixed Frame 改为 world。
+你会发现这只手现在开始在 3D 空间中绕着中心点顺滑地转圈了！
+
+
+
 
 
 1. 软件环境与工具（必选）
